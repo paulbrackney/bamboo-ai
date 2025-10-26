@@ -26,7 +26,7 @@ const openai = new OpenAI({
 // Chat endpoint
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, conversationHistory = [] } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
@@ -39,13 +39,26 @@ app.post('/api/chat', async (req, res) => {
      Keep your responses conversational, helpful, and always end with a unique goat joke. 
      Make sure each goat joke is different from previous ones.`;
 
+    // Build messages array with conversation history
+    const messages = [
+      { role: 'system', content: systemPrompt }
+    ];
+
+    // Add conversation history
+    conversationHistory.forEach(msg => {
+      messages.push({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.text
+      });
+    });
+
+    // Add current message
+    messages.push({ role: 'user', content: message });
+
     // Call OpenAI API
     const completion = await openai.chat.completions.create({
       model: 'gpt-5-nano',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: message }
-      ],
+      messages: messages,
     });
 
     const response = completion.choices[0].message.content;
