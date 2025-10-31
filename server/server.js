@@ -2,14 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import https from 'https';
 import http from 'http';
 import { URL } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 // Load environment variables
 dotenv.config();
@@ -28,51 +23,40 @@ const openai = new OpenAI({
 
 // Cribl configuration
 const CRIBL_CONFIG = {
-  // Default to standard HTTPS endpoint (works on port 443, compatible with Vercel serverless)
-  // Using the HTTP Collector endpoint which works properly in production environments
   url: process.env.CRIBL_URL || 'http://default.main.focused-gilbert-141036e.cribl.cloud:20001',
   authToken: process.env.CRIBL_AUTH_TOKEN,
-  enabled: process.env.CRIBL_ENABLED !== 'false' // Default to enabled
+  enabled: process.env.CRIBL_ENABLED !== 'false'
 };
 
-// Log Cribl configuration at startup (but don't log the full URL/token for security)
 console.log('[STARTUP] Cribl Configuration:', {
   enabled: CRIBL_CONFIG.enabled,
   urlSet: !!CRIBL_CONFIG.url,
-  url: CRIBL_CONFIG.url ? CRIBL_CONFIG.url.substring(0, 50) + '...' : 'Not set',
-  hasAuthToken: !!CRIBL_CONFIG.authToken,
-  envCRIBL_URL: process.env.CRIBL_URL ? 'Set' : 'Not set',
-  envCRIBL_ENABLED: process.env.CRIBL_ENABLED || 'undefined (defaults to enabled)'
+  hasAuthToken: !!CRIBL_CONFIG.authToken
 });
 
-// Function to send event to Cribl
-// Returns a promise that resolves when the request is initiated (for serverless compatibility)
-async function sendToCribl(eventData) {
-  console.log('[CRIBL] sendToCribl called');
-  console.log('[CRIBL] Config:', {
-    enabled: CRIBL_CONFIG.enabled,
-    url: CRIBL_CONFIG.url ? 'Set' : 'Not set',
-    hasAuthToken: !!CRIBL_CONFIG.authToken
-  });
+function createCriblEvent(type, payload) {
+  return {
+    _raw: payload._raw,
+    timestamp: new Date().toISOString(),
+    ...payload,
+    host: process.env.HOSTNAME || 'ian-chat-app',
+    source: 'chat-api',
+    eventType: type,
+    criblInstance: 'default.main.focused-gilbert-141036e.cribl.cloud'
+  };
+}
 
+async function sendToCribl(eventData) {
   if (!CRIBL_CONFIG.enabled || !CRIBL_CONFIG.url) {
-    console.log('[CRIBL] Integration disabled or not configured');
     return;
   }
 
   try {
     const url = new URL(CRIBL_CONFIG.url);
     const requestBody = JSON.stringify(eventData);
-    
-    // Log parsed URL details for debugging
-    console.log('[CRIBL] Parsed URL details:', {
-      protocol: url.protocol,
-      hostname: url.hostname,
-      port: url.port,
-      pathname: url.pathname,
-      search: url.search,
-      fullUrl: CRIBL_CONFIG.url
-    });
+    const httpModule = url.protocol === 'https:' ? https : http;
+    const port = url.port ? parseInt(url.port, 10) : (url.protocol === 'https:' ? 443 : 80);
+    const path = (url.pathname || '/') + url.search;
     
     const headers = {
       'Content-Type': 'application/json',
@@ -83,28 +67,6 @@ async function sendToCribl(eventData) {
       headers['Authorization'] = `Bearer ${CRIBL_CONFIG.authToken}`;
     }
 
-    console.log('[CRIBL] Sending event to:', CRIBL_CONFIG.url);
-    console.log('[CRIBL] Event data:', JSON.stringify(eventData, null, 2));
-
-    // Choose http or https based on URL protocol
-    const httpModule = url.protocol === 'https:' ? https : http;
-
-    // Parse port - URL.port might be empty string, so convert to number or use default
-    const port = url.port ? parseInt(url.port, 10) : (url.protocol === 'https:' ? 443 : 80);
-    
-    // Ensure path is not empty
-    const path = (url.pathname || '/') + url.search;
-
-    console.log('[CRIBL] Request options:', {
-      protocol: url.protocol,
-      hostname: url.hostname,
-      port: port,
-      path: path,
-      method: 'POST',
-      usingModule: url.protocol === 'https:' ? 'https' : 'http'
-    });
-
-    // Use http/https module to support custom ports
     const response = await new Promise((resolve, reject) => {
       const options = {
         hostname: url.hostname,
@@ -112,114 +74,35 @@ async function sendToCribl(eventData) {
         path: path,
         method: 'POST',
         headers: headers,
-        timeout: 10000, // Increased to 10 seconds for serverless environments
+        timeout: 10000,
       };
-
-      console.log('[CRIBL] Making request with options:', {
-        hostname: options.hostname,
-        port: options.port,
-        path: options.path,
-        timeout: options.timeout
-      });
 
       const req = httpModule.request(options, (res) => {
         let responseData = '';
-        
-        res.on('data', (chunk) => {
-          responseData += chunk;
-        });
-        
-        res.on('end', () => {
-          resolve({
-            status: res.statusCode,
-            statusText: res.statusMessage,
-            body: responseData,
-            ok: res.statusCode >= 200 && res.statusCode < 300
-          });
-        });
+        res.on('data', (chunk) => responseData += chunk);
+        res.on('end', () => resolve({
+          status: res.statusCode,
+          statusText: res.statusMessage,
+          body: responseData,
+          ok: res.statusCode >= 200 && res.statusCode < 300
+        }));
       });
 
-      req.on('error', (error) => {
-        console.error('[CRIBL] Request error event:', {
-          message: error.message,
-          code: error.code,
-          errno: error.errno,
-          syscall: error.syscall,
-          address: error.address,
-          port: error.port
-        });
-        reject(error);
-      });
-
+      req.on('error', reject);
       req.on('timeout', () => {
-        // Destroy connection on timeout
-        console.error('[CRIBL] Request timeout - destroying connection');
         req.destroy();
-        reject(new Error(`Request timeout after 10 seconds. Request was sent but response timed out.`));
+        reject(new Error('Request timeout after 10 seconds'));
       });
 
-      // For serverless: write data immediately to initiate the request
-      // The request object handles socket assignment internally
       req.write(requestBody);
       req.end();
-      console.log('[CRIBL] Request initiated (data written, connection ending)');
     });
 
-    console.log('[CRIBL] Response status:', response.status, response.statusText);
-    console.log('[CRIBL] Response body:', response.body);
-
     if (!response.ok) {
-      console.error('[CRIBL] Failed to send event:', {
-        status: response.status,
-        statusText: response.statusText,
-        responseBody: response.body,
-        url: CRIBL_CONFIG.url
-      });
-    } else {
-      console.log('[CRIBL] Event sent successfully');
+      console.error('[CRIBL] Failed to send event:', response.status, response.statusText);
     }
   } catch (error) {
-    const errorInfo = {
-      message: error.message,
-      name: error.name,
-      url: CRIBL_CONFIG.url
-    };
-
-    // Add more details for network errors
-    if (error.code) errorInfo.code = error.code;
-    if (error.cause) errorInfo.cause = error.cause;
-    
-    // Only log stack in development
-    if (process.env.NODE_ENV !== 'production') {
-      errorInfo.stack = error.stack;
-    }
-
-    console.error('[CRIBL] Error sending event:', errorInfo);
-
-    // Helpful error messages
-    if (error.message.includes('timeout')) {
-      console.warn('[CRIBL] Request timed out after 10 seconds.');
-      console.warn('[CRIBL] The request may have been sent to Cribl, but the response timed out.');
-      console.warn('[CRIBL] Check your Cribl dashboard to verify events are arriving.');
-    } else if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
-      console.error('[CRIBL] Network error detected:', error.code);
-      console.error('[CRIBL] This could indicate:');
-      console.error('[CRIBL] - Vercel serverless functions may block custom ports (non-80/443)');
-      console.error('[CRIBL] - Network connectivity issues (common in serverless)');
-      console.error('[CRIBL] - Firewall blocking the connection');
-      console.error('[CRIBL] - DNS resolution issues');
-      console.error('[CRIBL] - Incorrect CRIBL_URL configuration');
-      console.error('[CRIBL] Consider using port 80 for HTTP or 443 for HTTPS if custom ports are blocked');
-    } else if (error.message.includes('fetch failed') || error.message.includes('bad port') || error.code) {
-      console.error('[CRIBL] Network error. This could indicate:');
-      console.error('[CRIBL] - Network connectivity issues (common in serverless)');
-      console.error('[CRIBL] - SSL/TLS certificate problems');
-      console.error('[CRIBL] - Firewall blocking the connection');
-      console.error('[CRIBL] - Incorrect CRIBL_URL configuration');
-      if (error.code) {
-        console.error(`[CRIBL] Error code: ${error.code}`);
-      }
-    }
+    console.error('[CRIBL] Error:', error.message, error.code || '');
   }
 }
 
@@ -258,91 +141,43 @@ app.post('/api/chat', async (req, res) => {
     // Add current message
     messages.push({ role: 'user', content: message });
 
-    // Call OpenAI API
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: messages,
     });
 
     const response = completion.choices[0].message.content;
-    const endTime = Date.now();
-    const duration = endTime - startTime;
+    const duration = Date.now() - startTime;
 
-    // Send success event to Cribl
-    const criblEvent = {
-      _raw: `Chat request processed successfully - Ian the Criblanian responded with a goat joke`,
-      timestamp: new Date().toISOString(),
-      requestId: requestId,
-      host: process.env.HOSTNAME || 'ian-chat-app',
-      source: 'chat-api',
-      eventType: 'chat_request',
+    sendToCribl(createCriblEvent('chat_request', {
+      _raw: 'Chat request processed successfully',
+      requestId,
       userMessage: message,
       aiResponse: response,
       conversationLength: conversationHistory.length,
       processingTimeMs: duration,
       model: 'gpt-4o-mini',
-      status: 'success',
-      criblInstance: 'default.main.focused-gilbert-141036e.cribl.cloud'
-    };
-
-    // Start Cribl request and wait briefly for it to initiate
-    // This ensures the HTTP request starts before Vercel terminates the function
-    console.log('[CHAT] Starting Cribl event send...');
-    const criblPromise = sendToCribl(criblEvent).catch(err => {
-      if (err.message.includes('timeout')) {
-        console.log('[CHAT] Cribl request timed out. Event may have been sent - check Cribl dashboard to confirm.');
-      } else {
-        console.error('[CHAT] Cribl event error:', err.message);
-      }
-    });
-
-    // Wait a tiny bit (50ms) to ensure the HTTP request socket is established
-    // This is critical for Vercel serverless - the request must be in-flight before response
+      status: 'success'
+    })).catch(() => {});
     await new Promise(resolve => setTimeout(resolve, 50));
-    
-    // Send response to user immediately (Cribl request is now in-flight)
     res.json({ response });
-    console.log('[CHAT] Response sent, Cribl request is in progress...');
   } catch (error) {
-    const endTime = Date.now();
-    const duration = endTime - startTime;
-    
     console.error('Error calling OpenAI:', error);
-
-    // Send error event to Cribl
-    const criblErrorEvent = {
+    
+    sendToCribl(createCriblEvent('chat_error', {
       _raw: `Chat request failed: ${error.message}`,
-      timestamp: new Date().toISOString(),
-      requestId: requestId,
-      host: process.env.HOSTNAME || 'ian-chat-app',
-      source: 'chat-api',
-      eventType: 'chat_error',
+      requestId,
       userMessage: req.body.message || 'unknown',
       errorMessage: error.message,
-      processingTimeMs: duration,
-      status: 'error',
-      criblInstance: 'default.main.focused-gilbert-141036e.cribl.cloud'
-    };
-
-    // Start error event to Cribl and wait briefly for it to initiate
-    console.log('[CHAT] Starting Cribl error event send...');
-    const criblErrorPromise = sendToCribl(criblErrorEvent).catch(err => {
-      if (err.message.includes('timeout')) {
-        console.log('[CHAT] Cribl error event timed out. Event may have been sent.');
-      } else {
-        console.error('[CHAT] Cribl error event error:', err.message);
-      }
-    });
-
-    // Wait a tiny bit (50ms) to ensure the HTTP request socket is established
-    await new Promise(resolve => setTimeout(resolve, 50));
+      processingTimeMs: Date.now() - startTime,
+      status: 'error'
+    })).catch(() => {});
     
-    // Send error response immediately (Cribl request is now in-flight)
+    await new Promise(resolve => setTimeout(resolve, 50));
     res.status(500).json({ 
       error: 'Failed to get response from OpenAI',
       details: error.message 
     });
-    console.log('[CHAT] Error response sent, Cribl error event is in progress...');
   }
 });
 
@@ -351,41 +186,28 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Test Cribl endpoint for debugging
 app.post('/api/test-cribl', async (req, res) => {
-  console.log('[TEST-CRIBL] Test endpoint called');
-  
   const testEvent = {
-    _raw: 'Test event from Vercel deployment',
+    _raw: 'Test event from deployment',
     timestamp: new Date().toISOString(),
     source: 'test-endpoint',
-    host: process.env.HOSTNAME || 'vercel-test',
+    host: process.env.HOSTNAME || 'test',
     status: 'test'
   };
 
   try {
-    console.log('[TEST-CRIBL] Attempting to send test event to Cribl...');
     await sendToCribl(testEvent);
     res.json({ 
       success: true, 
-      message: 'Test event sent to Cribl. Check server logs for details.',
-      config: {
-        enabled: CRIBL_CONFIG.enabled,
-        urlSet: !!CRIBL_CONFIG.url,
-        urlPreview: CRIBL_CONFIG.url ? CRIBL_CONFIG.url.substring(0, 50) + '...' : 'Not set'
-      }
+      message: 'Test event sent to Cribl',
+      config: { enabled: CRIBL_CONFIG.enabled, urlSet: !!CRIBL_CONFIG.url }
     });
   } catch (error) {
     console.error('[TEST-CRIBL] Error:', error);
     res.status(500).json({ 
       success: false, 
       error: error.message,
-      errorCode: error.code,
-      config: {
-        enabled: CRIBL_CONFIG.enabled,
-        urlSet: !!CRIBL_CONFIG.url,
-        urlPreview: CRIBL_CONFIG.url ? CRIBL_CONFIG.url.substring(0, 50) + '...' : 'Not set'
-      }
+      config: { enabled: CRIBL_CONFIG.enabled, urlSet: !!CRIBL_CONFIG.url }
     });
   }
 });
