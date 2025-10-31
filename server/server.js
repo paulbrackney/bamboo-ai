@@ -221,12 +221,18 @@ app.post('/api/chat', async (req, res) => {
       criblInstance: 'default.main.focused-gilbert-141036e.cribl.cloud'
     };
 
-    // Send to Cribl asynchronously (don't wait for response)
+    // Send to Cribl BEFORE sending response (critical for serverless)
+    // This ensures the HTTP request is initiated before function might terminate
     console.log('[CHAT] Attempting to send event to Cribl...');
-    sendToCribl(criblEvent).catch(err => 
+    const criblPromise = sendToCribl(criblEvent);
+    
+    // Track the promise to prevent it from being garbage collected
+    criblPromise.catch(err => 
       console.error('[CHAT] Cribl event promise rejected:', err)
     );
-
+    
+    // Send response to user (after Cribl request is initiated)
+    // In serverless, the function will stay alive briefly to complete the Cribl request
     res.json({ response });
   } catch (error) {
     const endTime = Date.now();
@@ -249,12 +255,16 @@ app.post('/api/chat', async (req, res) => {
       criblInstance: 'default.main.focused-gilbert-141036e.cribl.cloud'
     };
 
-    // Send error to Cribl asynchronously
+    // Send error to Cribl BEFORE sending response (critical for serverless)
     console.log('[CHAT] Attempting to send error event to Cribl...');
-    sendToCribl(criblErrorEvent).catch(err => 
+    const criblErrorPromise = sendToCribl(criblErrorEvent);
+    
+    // Track the promise to prevent it from being garbage collected
+    criblErrorPromise.catch(err => 
       console.error('[CHAT] Cribl error event promise rejected:', err)
     );
 
+    // Send error response (after Cribl request is initiated)
     res.status(500).json({ 
       error: 'Failed to get response from OpenAI',
       details: error.message 
