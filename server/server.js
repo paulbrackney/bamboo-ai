@@ -281,17 +281,23 @@ app.post('/api/chat', async (req, res) => {
       criblInstance: 'default.main.focused-gilbert-141036e.cribl.cloud'
     };
 
-    // Send response to user immediately (don't wait for Cribl)
-    res.json({ response });
-    
-    // Send to Cribl asynchronously (fire-and-forget for serverless)
-    console.log('[CHAT] Sending event to Cribl (fire-and-forget)...');
-    sendToCribl(criblEvent).catch(err => {
+    // Start Cribl request BEFORE sending response (for serverless compatibility)
+    // This ensures the request is initiated before Vercel might terminate the function
+    console.log('[CHAT] Starting Cribl event send (before response)...');
+    const criblPromise = sendToCribl(criblEvent).catch(err => {
       if (err.message.includes('timeout')) {
         console.log('[CHAT] Cribl request timed out. Event may have been sent - check Cribl dashboard to confirm.');
       } else {
         console.error('[CHAT] Cribl event error:', err.message);
       }
+    });
+
+    // Use setImmediate to ensure the HTTP request starts before we send response
+    // This gives the request time to initiate the socket connection
+    setImmediate(() => {
+      // Send response to user immediately (don't wait for Cribl)
+      res.json({ response });
+      console.log('[CHAT] Response sent, Cribl request should be in progress...');
     });
   } catch (error) {
     const endTime = Date.now();
@@ -314,20 +320,24 @@ app.post('/api/chat', async (req, res) => {
       criblInstance: 'default.main.focused-gilbert-141036e.cribl.cloud'
     };
 
-    // Send error response immediately
-    res.status(500).json({ 
-      error: 'Failed to get response from OpenAI',
-      details: error.message 
-    });
-
-    // Send error to Cribl asynchronously (fire-and-forget)
-    console.log('[CHAT] Sending error event to Cribl (fire-and-forget)...');
-    sendToCribl(criblErrorEvent).catch(err => {
+    // Start error event to Cribl BEFORE sending response (for serverless compatibility)
+    console.log('[CHAT] Starting Cribl error event send (before response)...');
+    const criblErrorPromise = sendToCribl(criblErrorEvent).catch(err => {
       if (err.message.includes('timeout')) {
         console.log('[CHAT] Cribl error event timed out. Event may have been sent.');
       } else {
         console.error('[CHAT] Cribl error event error:', err.message);
       }
+    });
+
+    // Use setImmediate to ensure the HTTP request starts before we send response
+    setImmediate(() => {
+      // Send error response immediately
+      res.status(500).json({ 
+        error: 'Failed to get response from OpenAI',
+        details: error.message 
+      });
+      console.log('[CHAT] Error response sent, Cribl error event should be in progress...');
     });
   }
 });
