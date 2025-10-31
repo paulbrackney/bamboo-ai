@@ -27,7 +27,7 @@ const openai = new OpenAI({
 
 // Cribl configuration
 const CRIBL_CONFIG = {
-  url: process.env.CRIBL_URL || 'https://default.main.focused-gilbert-141036e.cribl.cloud:10080/cribl/_bulk',
+  url: process.env.CRIBL_URL || 'https://default.main.focused-gilbert-141036e.cribl.cloud:443/cribl/_bulk',
   authToken: process.env.CRIBL_AUTH_TOKEN,
   enabled: process.env.CRIBL_ENABLED !== 'false' // Default to enabled
 };
@@ -80,7 +80,7 @@ async function sendToCribl(eventData) {
         path: url.pathname + url.search,
         method: 'POST',
         headers: headers,
-        timeout: 10000, // 10 second timeout
+        timeout: 5000, // 5 second timeout (reduced - if it times out, Vercel likely blocks port 10080)
       };
 
       const req = https.request(options, (res) => {
@@ -106,7 +106,7 @@ async function sendToCribl(eventData) {
 
       req.on('timeout', () => {
         req.destroy();
-        reject(new Error('Request timeout'));
+        reject(new Error(`Request timeout after 30 seconds. This may indicate network issues from Vercel to ${url.hostname}:${url.port || 443}`));
       });
 
       req.write(requestBody);
@@ -146,7 +146,11 @@ async function sendToCribl(eventData) {
 
     // Helpful error messages
     if (error.message.includes('timeout')) {
-      console.error('[CRIBL] Request timed out after 10 seconds. This might be a network issue in serverless environment.');
+      console.error('[CRIBL] Request timed out after 30 seconds. Possible issues:');
+      console.error('[CRIBL] - Network latency from Vercel to Cribl endpoint');
+      console.error('[CRIBL] - Port 10080 might be blocked or filtered by Vercel');
+      console.error('[CRIBL] - Cribl endpoint may be slow or unresponsive');
+      console.error('[CRIBL] - Consider checking Cribl source configuration');
     } else if (error.message.includes('fetch failed') || error.message.includes('bad port') || error.code) {
       console.error('[CRIBL] Network error. This could indicate:');
       console.error('[CRIBL] - Network connectivity issues (common in serverless)');
@@ -221,19 +225,22 @@ app.post('/api/chat', async (req, res) => {
       criblInstance: 'default.main.focused-gilbert-141036e.cribl.cloud'
     };
 
-    // Send to Cribl BEFORE sending response (critical for serverless)
-    // This ensures the HTTP request is initiated before function might terminate
-    console.log('[CHAT] Attempting to send event to Cribl...');
-    const criblPromise = sendToCribl(criblEvent);
-    
-    // Track the promise to prevent it from being garbage collected
-    criblPromise.catch(err => 
-      console.error('[CHAT] Cribl event promise rejected:', err)
-    );
-    
-    // Send response to user (after Cribl request is initiated)
-    // In serverless, the function will stay alive briefly to complete the Cribl request
+    // Send response to user immediately (don't wait for Cribl)
     res.json({ response });
+    
+    // Send to Cribl asynchronously (fire-and-forget for serverless)
+    // Note: If this times out, Vercel may be blocking port 10080
+    // Consider using a port 443 endpoint or a queue service
+    console.log('[CHAT] Sending event to Cribl asynchronously...');
+    sendToCribl(criblEvent).catch(err => {
+      // Log error but don't block - events may still be sent despite timeout
+      if (err.message.includes('timeout')) {
+        console.warn('[CHAT] Cribl request timed out. This may indicate Vercel is blocking port 10080.');
+        console.warn('[CHAT] Event may have been sent before timeout, check Cribl dashboard.');
+      } else {
+        console.error('[CHAT] Cribl event error:', err.message);
+      }
+    });
   } catch (error) {
     const endTime = Date.now();
     const duration = endTime - startTime;
@@ -255,19 +262,20 @@ app.post('/api/chat', async (req, res) => {
       criblInstance: 'default.main.focused-gilbert-141036e.cribl.cloud'
     };
 
-    // Send error to Cribl BEFORE sending response (critical for serverless)
-    console.log('[CHAT] Attempting to send error event to Cribl...');
-    const criblErrorPromise = sendToCribl(criblErrorEvent);
-    
-    // Track the promise to prevent it from being garbage collected
-    criblErrorPromise.catch(err => 
-      console.error('[CHAT] Cribl error event promise rejected:', err)
-    );
-
-    // Send error response (after Cribl request is initiated)
+    // Send error response immediately
     res.status(500).json({ 
       error: 'Failed to get response from OpenAI',
       details: error.message 
+    });
+
+    // Send error to Cribl asynchronously (fire-and-forget)
+    console.log('[CHAT] Sending error event to Cribl asynchronously...');
+    sendToCribl(criblErrorEvent).catch(err => {
+      if (err.message.includes('timeout')) {
+        console.warn('[CHAT] Cribl error event timed out. Vercel may be blocking port 10080.');
+      } else {
+        console.error('[CHAT] Cribl error event error:', err.message);
+      }
     });
   }
 });
