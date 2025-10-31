@@ -25,7 +25,7 @@ const openai = new OpenAI({
 
 // Cribl configuration
 const CRIBL_CONFIG = {
-  url: process.env.CRIBL_URL || 'https://default.main.focused-gilbert-141036e.cribl.cloud/api/v1/orgs/default/streams/main/collector/cribl/_bulk',
+  url: process.env.CRIBL_URL || 'https://default.main.focused-gilbert-141036e.cribl.cloud:10080/cribl/_bulk',
   authToken: process.env.CRIBL_AUTH_TOKEN,
   enabled: process.env.CRIBL_ENABLED !== 'false' // Default to enabled
 };
@@ -72,11 +72,18 @@ async function sendToCribl(eventData) {
     console.log('[CRIBL] Sending event to:', CRIBL_CONFIG.url);
     console.log('[CRIBL] Event data:', JSON.stringify(eventData, null, 2));
 
+    // Add timeout and signal for serverless environments
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
     const response = await fetch(CRIBL_CONFIG.url, {
       method: 'POST',
       headers: headers,
-      body: JSON.stringify(eventData)
+      body: JSON.stringify(eventData),
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     const responseText = await response.text();
     console.log('[CRIBL] Response status:', response.status, response.statusText);
@@ -93,12 +100,33 @@ async function sendToCribl(eventData) {
       console.log('[CRIBL] Event sent successfully');
     }
   } catch (error) {
-    console.error('[CRIBL] Error sending event:', {
+    const errorInfo = {
       message: error.message,
-      stack: error.stack,
       name: error.name,
       url: CRIBL_CONFIG.url
-    });
+    };
+
+    // Add more details for network errors
+    if (error.code) errorInfo.code = error.code;
+    if (error.cause) errorInfo.cause = error.cause;
+    
+    // Only log stack in development
+    if (process.env.NODE_ENV !== 'production') {
+      errorInfo.stack = error.stack;
+    }
+
+    console.error('[CRIBL] Error sending event:', errorInfo);
+
+    // Helpful error messages
+    if (error.name === 'AbortError') {
+      console.error('[CRIBL] Request timed out after 10 seconds. This might be a network issue in serverless environment.');
+    } else if (error.message.includes('fetch failed')) {
+      console.error('[CRIBL] Fetch failed. This could indicate:');
+      console.error('[CRIBL] - Network connectivity issues (common in serverless)');
+      console.error('[CRIBL] - SSL/TLS certificate problems');
+      console.error('[CRIBL] - Firewall blocking the connection');
+      console.error('[CRIBL] - The port 10080 might be blocked in serverless environments');
+    }
   }
 }
 
