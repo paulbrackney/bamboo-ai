@@ -30,10 +30,33 @@ const CRIBL_CONFIG = {
   enabled: process.env.CRIBL_ENABLED !== 'false' // Default to enabled
 };
 
+// Log Cribl configuration at startup (but don't log the full URL/token for security)
+console.log('[STARTUP] Cribl Configuration:', {
+  enabled: CRIBL_CONFIG.enabled,
+  urlSet: !!CRIBL_CONFIG.url,
+  url: CRIBL_CONFIG.url ? CRIBL_CONFIG.url.substring(0, 50) + '...' : 'Not set',
+  hasAuthToken: !!CRIBL_CONFIG.authToken,
+  envCRIBL_URL: process.env.CRIBL_URL ? 'Set' : 'Not set',
+  envCRIBL_ENABLED: process.env.CRIBL_ENABLED || 'undefined (defaults to enabled)'
+});
+
 // Function to send event to Cribl
 async function sendToCribl(eventData) {
+  console.log('[CRIBL] sendToCribl called');
+  console.log('[CRIBL] Config:', {
+    enabled: CRIBL_CONFIG.enabled,
+    url: CRIBL_CONFIG.url ? 'Set' : 'Not set',
+    hasAuthToken: !!CRIBL_CONFIG.authToken
+  });
+
   if (!CRIBL_CONFIG.enabled || !CRIBL_CONFIG.url) {
-    console.log('Cribl integration disabled or not configured');
+    console.log('[CRIBL] Integration disabled or not configured');
+    return;
+  }
+
+  // Check if fetch is available (Node 18+ has it built-in)
+  if (typeof fetch === 'undefined') {
+    console.error('[CRIBL] fetch is not available. This might be an older Node version. Consider using node-fetch.');
     return;
   }
 
@@ -46,19 +69,36 @@ async function sendToCribl(eventData) {
       headers['Authorization'] = `Bearer ${CRIBL_CONFIG.authToken}`;
     }
 
+    console.log('[CRIBL] Sending event to:', CRIBL_CONFIG.url);
+    console.log('[CRIBL] Event data:', JSON.stringify(eventData, null, 2));
+
     const response = await fetch(CRIBL_CONFIG.url, {
       method: 'POST',
       headers: headers,
       body: JSON.stringify(eventData)
     });
 
+    const responseText = await response.text();
+    console.log('[CRIBL] Response status:', response.status, response.statusText);
+    console.log('[CRIBL] Response body:', responseText);
+
     if (!response.ok) {
-      console.error('Failed to send event to Cribl:', response.status, response.statusText);
+      console.error('[CRIBL] Failed to send event:', {
+        status: response.status,
+        statusText: response.statusText,
+        responseBody: responseText,
+        url: CRIBL_CONFIG.url
+      });
     } else {
-      console.log('Event sent to Cribl successfully');
+      console.log('[CRIBL] Event sent successfully');
     }
   } catch (error) {
-    console.error('Error sending event to Cribl:', error.message);
+    console.error('[CRIBL] Error sending event:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      url: CRIBL_CONFIG.url
+    });
   }
 }
 
@@ -125,8 +165,9 @@ app.post('/api/chat', async (req, res) => {
     };
 
     // Send to Cribl asynchronously (don't wait for response)
+    console.log('[CHAT] Attempting to send event to Cribl...');
     sendToCribl(criblEvent).catch(err => 
-      console.error('Cribl event failed:', err.message)
+      console.error('[CHAT] Cribl event promise rejected:', err)
     );
 
     res.json({ response });
@@ -152,8 +193,9 @@ app.post('/api/chat', async (req, res) => {
     };
 
     // Send error to Cribl asynchronously
+    console.log('[CHAT] Attempting to send error event to Cribl...');
     sendToCribl(criblErrorEvent).catch(err => 
-      console.error('Cribl error event failed:', err.message)
+      console.error('[CHAT] Cribl error event promise rejected:', err)
     );
 
     res.status(500).json({ 
