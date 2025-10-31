@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import https from 'https';
+import http from 'http';
 import { URL } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -74,6 +75,9 @@ async function sendToCribl(eventData) {
     console.log('[CRIBL] Sending event to:', CRIBL_CONFIG.url);
     console.log('[CRIBL] Event data:', JSON.stringify(eventData, null, 2));
 
+    // Choose http or https based on URL protocol
+    const httpModule = url.protocol === 'https:' ? https : http;
+
     // Use https module instead of fetch to support custom ports
     const response = await new Promise((resolve, reject) => {
       const options = {
@@ -85,7 +89,7 @@ async function sendToCribl(eventData) {
         timeout: 3000, // 3 second timeout (fail fast for serverless)
       };
 
-      const req = https.request(options, (res) => {
+      const req = httpModule.request(options, (res) => {
         let responseData = '';
         
         res.on('data', (chunk) => {
