@@ -46,6 +46,7 @@ console.log('[STARTUP] Cribl Configuration:', {
 });
 
 // Function to send event to Cribl
+// Returns a promise that resolves when the request is initiated (for serverless compatibility)
 async function sendToCribl(eventData) {
   console.log('[CRIBL] sendToCribl called');
   console.log('[CRIBL] Config:', {
@@ -157,8 +158,11 @@ async function sendToCribl(eventData) {
         reject(new Error(`Request timeout after 10 seconds. Request was sent but response timed out.`));
       });
 
+      // For serverless: write data immediately to initiate the request
+      // The request object handles socket assignment internally
       req.write(requestBody);
       req.end();
+      console.log('[CRIBL] Request initiated (data written, connection ending)');
     });
 
     console.log('[CRIBL] Response status:', response.status, response.statusText);
@@ -281,9 +285,9 @@ app.post('/api/chat', async (req, res) => {
       criblInstance: 'default.main.focused-gilbert-141036e.cribl.cloud'
     };
 
-    // Start Cribl request BEFORE sending response (for serverless compatibility)
-    // This ensures the request is initiated before Vercel might terminate the function
-    console.log('[CHAT] Starting Cribl event send (before response)...');
+    // Start Cribl request and wait briefly for it to initiate
+    // This ensures the HTTP request starts before Vercel terminates the function
+    console.log('[CHAT] Starting Cribl event send...');
     const criblPromise = sendToCribl(criblEvent).catch(err => {
       if (err.message.includes('timeout')) {
         console.log('[CHAT] Cribl request timed out. Event may have been sent - check Cribl dashboard to confirm.');
@@ -292,13 +296,13 @@ app.post('/api/chat', async (req, res) => {
       }
     });
 
-    // Use setImmediate to ensure the HTTP request starts before we send response
-    // This gives the request time to initiate the socket connection
-    setImmediate(() => {
-      // Send response to user immediately (don't wait for Cribl)
-      res.json({ response });
-      console.log('[CHAT] Response sent, Cribl request should be in progress...');
-    });
+    // Wait a tiny bit (50ms) to ensure the HTTP request socket is established
+    // This is critical for Vercel serverless - the request must be in-flight before response
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Send response to user immediately (Cribl request is now in-flight)
+    res.json({ response });
+    console.log('[CHAT] Response sent, Cribl request is in progress...');
   } catch (error) {
     const endTime = Date.now();
     const duration = endTime - startTime;
@@ -320,8 +324,8 @@ app.post('/api/chat', async (req, res) => {
       criblInstance: 'default.main.focused-gilbert-141036e.cribl.cloud'
     };
 
-    // Start error event to Cribl BEFORE sending response (for serverless compatibility)
-    console.log('[CHAT] Starting Cribl error event send (before response)...');
+    // Start error event to Cribl and wait briefly for it to initiate
+    console.log('[CHAT] Starting Cribl error event send...');
     const criblErrorPromise = sendToCribl(criblErrorEvent).catch(err => {
       if (err.message.includes('timeout')) {
         console.log('[CHAT] Cribl error event timed out. Event may have been sent.');
@@ -330,15 +334,15 @@ app.post('/api/chat', async (req, res) => {
       }
     });
 
-    // Use setImmediate to ensure the HTTP request starts before we send response
-    setImmediate(() => {
-      // Send error response immediately
-      res.status(500).json({ 
-        error: 'Failed to get response from OpenAI',
-        details: error.message 
-      });
-      console.log('[CHAT] Error response sent, Cribl error event should be in progress...');
+    // Wait a tiny bit (50ms) to ensure the HTTP request socket is established
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Send error response immediately (Cribl request is now in-flight)
+    res.status(500).json({ 
+      error: 'Failed to get response from OpenAI',
+      details: error.message 
     });
+    console.log('[CHAT] Error response sent, Cribl error event is in progress...');
   }
 });
 
