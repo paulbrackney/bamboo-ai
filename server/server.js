@@ -63,6 +63,16 @@ async function sendToCribl(eventData) {
     const url = new URL(CRIBL_CONFIG.url);
     const requestBody = JSON.stringify(eventData);
     
+    // Log parsed URL details for debugging
+    console.log('[CRIBL] Parsed URL details:', {
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: url.port,
+      pathname: url.pathname,
+      search: url.search,
+      fullUrl: CRIBL_CONFIG.url
+    });
+    
     const headers = {
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(requestBody),
@@ -78,16 +88,38 @@ async function sendToCribl(eventData) {
     // Choose http or https based on URL protocol
     const httpModule = url.protocol === 'https:' ? https : http;
 
-    // Use https module instead of fetch to support custom ports
+    // Parse port - URL.port might be empty string, so convert to number or use default
+    const port = url.port ? parseInt(url.port, 10) : (url.protocol === 'https:' ? 443 : 80);
+    
+    // Ensure path is not empty
+    const path = (url.pathname || '/') + url.search;
+
+    console.log('[CRIBL] Request options:', {
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: port,
+      path: path,
+      method: 'POST',
+      usingModule: url.protocol === 'https:' ? 'https' : 'http'
+    });
+
+    // Use http/https module to support custom ports
     const response = await new Promise((resolve, reject) => {
       const options = {
         hostname: url.hostname,
-        port: url.port || 20001,
-        path: url.pathname + url.search,
+        port: port,
+        path: path,
         method: 'POST',
         headers: headers,
-        timeout: 3000, // 3 second timeout (fail fast for serverless)
+        timeout: 10000, // Increased to 10 seconds for serverless environments
       };
+
+      console.log('[CRIBL] Making request with options:', {
+        hostname: options.hostname,
+        port: options.port,
+        path: options.path,
+        timeout: options.timeout
+      });
 
       const req = httpModule.request(options, (res) => {
         let responseData = '';
@@ -107,13 +139,22 @@ async function sendToCribl(eventData) {
       });
 
       req.on('error', (error) => {
+        console.error('[CRIBL] Request error event:', {
+          message: error.message,
+          code: error.code,
+          errno: error.errno,
+          syscall: error.syscall,
+          address: error.address,
+          port: error.port
+        });
         reject(error);
       });
 
       req.on('timeout', () => {
         // Destroy connection on timeout
+        console.error('[CRIBL] Request timeout - destroying connection');
         req.destroy();
-        reject(new Error(`Request timeout after 3 seconds. Request was sent but response timed out.`));
+        reject(new Error(`Request timeout after 10 seconds. Request was sent but response timed out.`));
       });
 
       req.write(requestBody);
@@ -153,9 +194,18 @@ async function sendToCribl(eventData) {
 
     // Helpful error messages
     if (error.message.includes('timeout')) {
-      console.warn('[CRIBL] Request timed out after 3 seconds.');
+      console.warn('[CRIBL] Request timed out after 10 seconds.');
       console.warn('[CRIBL] The request may have been sent to Cribl, but the response timed out.');
       console.warn('[CRIBL] Check your Cribl dashboard to verify events are arriving.');
+    } else if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
+      console.error('[CRIBL] Network error detected:', error.code);
+      console.error('[CRIBL] This could indicate:');
+      console.error('[CRIBL] - Vercel serverless functions may block custom ports (non-80/443)');
+      console.error('[CRIBL] - Network connectivity issues (common in serverless)');
+      console.error('[CRIBL] - Firewall blocking the connection');
+      console.error('[CRIBL] - DNS resolution issues');
+      console.error('[CRIBL] - Incorrect CRIBL_URL configuration');
+      console.error('[CRIBL] Consider using port 80 for HTTP or 443 for HTTPS if custom ports are blocked');
     } else if (error.message.includes('fetch failed') || error.message.includes('bad port') || error.code) {
       console.error('[CRIBL] Network error. This could indicate:');
       console.error('[CRIBL] - Network connectivity issues (common in serverless)');
@@ -285,6 +335,45 @@ app.post('/api/chat', async (req, res) => {
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
+});
+
+// Test Cribl endpoint for debugging
+app.post('/api/test-cribl', async (req, res) => {
+  console.log('[TEST-CRIBL] Test endpoint called');
+  
+  const testEvent = {
+    _raw: 'Test event from Vercel deployment',
+    timestamp: new Date().toISOString(),
+    source: 'test-endpoint',
+    host: process.env.HOSTNAME || 'vercel-test',
+    status: 'test'
+  };
+
+  try {
+    console.log('[TEST-CRIBL] Attempting to send test event to Cribl...');
+    await sendToCribl(testEvent);
+    res.json({ 
+      success: true, 
+      message: 'Test event sent to Cribl. Check server logs for details.',
+      config: {
+        enabled: CRIBL_CONFIG.enabled,
+        urlSet: !!CRIBL_CONFIG.url,
+        urlPreview: CRIBL_CONFIG.url ? CRIBL_CONFIG.url.substring(0, 50) + '...' : 'Not set'
+      }
+    });
+  } catch (error) {
+    console.error('[TEST-CRIBL] Error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      errorCode: error.code,
+      config: {
+        enabled: CRIBL_CONFIG.enabled,
+        urlSet: !!CRIBL_CONFIG.url,
+        urlPreview: CRIBL_CONFIG.url ? CRIBL_CONFIG.url.substring(0, 50) + '...' : 'Not set'
+      }
+    });
+  }
 });
 
 // Export the app for Vercel
