@@ -25,7 +25,7 @@ const openai = new OpenAI({
 
 // Cribl configuration
 const CRIBL_CONFIG = {
-  url: process.env.CRIBL_URL || 'https://default.main.focused-gilbert-141036e.cribl.cloud:10080/cribl/_bulk',
+  url: process.env.CRIBL_URL || 'https://default.main.focused-gilbert-141036e.cribl.cloud/api/v1/orgs/default/streams/main/collector/cribl/_bulk',
   authToken: process.env.CRIBL_AUTH_TOKEN,
   enabled: process.env.CRIBL_ENABLED !== 'false' // Default to enabled
 };
