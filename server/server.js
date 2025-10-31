@@ -29,7 +29,7 @@ const openai = new OpenAI({
 const CRIBL_CONFIG = {
   // Default to standard HTTPS endpoint (works on port 443, compatible with Vercel serverless)
   // Using the HTTP Collector endpoint which works properly in production environments
-  url: process.env.CRIBL_URL || 'https://default.main.focused-gilbert-141036e.cribl.cloud:10080/cribl/_bulk',
+  url: process.env.CRIBL_URL || 'http://default.main.focused-gilbert-141036e.cribl.cloud:20001',
   authToken: process.env.CRIBL_AUTH_TOKEN,
   enabled: process.env.CRIBL_ENABLED !== 'false' // Default to enabled
 };
@@ -78,7 +78,7 @@ async function sendToCribl(eventData) {
     const response = await new Promise((resolve, reject) => {
       const options = {
         hostname: url.hostname,
-        port: url.port || 10080,
+        port: url.port || 20001,
         path: url.pathname + url.search,
         method: 'POST',
         headers: headers,
