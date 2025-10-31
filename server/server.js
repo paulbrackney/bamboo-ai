@@ -4,6 +4,8 @@ import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import https from 'https';
+import { URL } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -54,15 +56,13 @@ async function sendToCribl(eventData) {
     return;
   }
 
-  // Check if fetch is available (Node 18+ has it built-in)
-  if (typeof fetch === 'undefined') {
-    console.error('[CRIBL] fetch is not available. This might be an older Node version. Consider using node-fetch.');
-    return;
-  }
-
   try {
+    const url = new URL(CRIBL_CONFIG.url);
+    const requestBody = JSON.stringify(eventData);
+    
     const headers = {
       'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(requestBody),
     };
 
     if (CRIBL_CONFIG.authToken) {
@@ -72,28 +72,55 @@ async function sendToCribl(eventData) {
     console.log('[CRIBL] Sending event to:', CRIBL_CONFIG.url);
     console.log('[CRIBL] Event data:', JSON.stringify(eventData, null, 2));
 
-    // Add timeout and signal for serverless environments
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    // Use https module instead of fetch to support custom ports
+    const response = await new Promise((resolve, reject) => {
+      const options = {
+        hostname: url.hostname,
+        port: url.port || 443,
+        path: url.pathname + url.search,
+        method: 'POST',
+        headers: headers,
+        timeout: 10000, // 10 second timeout
+      };
 
-    const response = await fetch(CRIBL_CONFIG.url, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(eventData),
-      signal: controller.signal
+      const req = https.request(options, (res) => {
+        let responseData = '';
+        
+        res.on('data', (chunk) => {
+          responseData += chunk;
+        });
+        
+        res.on('end', () => {
+          resolve({
+            status: res.statusCode,
+            statusText: res.statusMessage,
+            body: responseData,
+            ok: res.statusCode >= 200 && res.statusCode < 300
+          });
+        });
+      });
+
+      req.on('error', (error) => {
+        reject(error);
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Request timeout'));
+      });
+
+      req.write(requestBody);
+      req.end();
     });
 
-    clearTimeout(timeoutId);
-
-    const responseText = await response.text();
     console.log('[CRIBL] Response status:', response.status, response.statusText);
-    console.log('[CRIBL] Response body:', responseText);
+    console.log('[CRIBL] Response body:', response.body);
 
     if (!response.ok) {
       console.error('[CRIBL] Failed to send event:', {
         status: response.status,
         statusText: response.statusText,
-        responseBody: responseText,
+        responseBody: response.body,
         url: CRIBL_CONFIG.url
       });
     } else {
@@ -118,14 +145,16 @@ async function sendToCribl(eventData) {
     console.error('[CRIBL] Error sending event:', errorInfo);
 
     // Helpful error messages
-    if (error.name === 'AbortError') {
+    if (error.message.includes('timeout')) {
       console.error('[CRIBL] Request timed out after 10 seconds. This might be a network issue in serverless environment.');
-    } else if (error.message.includes('fetch failed')) {
-      console.error('[CRIBL] Fetch failed. This could indicate:');
+    } else if (error.message.includes('fetch failed') || error.message.includes('bad port') || error.code) {
+      console.error('[CRIBL] Network error. This could indicate:');
       console.error('[CRIBL] - Network connectivity issues (common in serverless)');
       console.error('[CRIBL] - SSL/TLS certificate problems');
       console.error('[CRIBL] - Firewall blocking the connection');
-      console.error('[CRIBL] - The port 10080 might be blocked in serverless environments');
+      if (error.code) {
+        console.error(`[CRIBL] Error code: ${error.code}`);
+      }
     }
   }
 }
