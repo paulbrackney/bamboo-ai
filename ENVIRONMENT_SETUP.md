@@ -6,7 +6,7 @@
 ```
 OPENAI_API_KEY = sk-proj-your-actual-openai-key-here
 NODE_ENV = production
-CRIBL_URL = https://default.main.focused-gilbert-141036e.cribl.cloud/api/v1/orgs/default/streams/main/collector/cribl/_bulk
+CRIBL_URL = https://default.main.focused-gilbert-141036e.cribl.cloud/cribl/_bulk
 CRIBL_ENABLED = true
 ```
 
@@ -46,7 +46,7 @@ VITE_API_URL = https://your-backend-project.vercel.app
 ```
 OPENAI_API_KEY=sk-proj-your-actual-openai-key-here
 PORT=3001
-CRIBL_URL=https://default.main.focused-gilbert-141036e.cribl.cloud/api/v1/orgs/default/streams/main/collector/cribl/_bulk
+CRIBL_URL=https://default.main.focused-gilbert-141036e.cribl.cloud/cribl/_bulk
 CRIBL_ENABLED=true
 ```
 
@@ -94,7 +94,7 @@ The application automatically sends events to Cribl Stream whenever someone uses
 - `aiResponse`: AI's response (success events only)
 - `conversationLength`: Number of previous messages
 - `processingTimeMs`: Request processing time
-- `model`: AI model used (gpt-5-nano)
+- `model`: AI model used (gpt-4o-mini)
 - `status`: success/error
 - `criblInstance`: Your Cribl instance identifier
 
