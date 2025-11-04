@@ -77,12 +77,14 @@ function App() {
     <div className="app">
       <div className="chat-container">
         <div className="chat-header">
-          <h1>Ian the Criblanian 🤘</h1>
+          <img src="/ian-ai-logo.png" alt="Ian AI Logo" className="header-logo" />
+          <h1>Ian AI</h1>
+          <div className="header-spacer"></div>
         </div>
         <div className="messages-container">
           {messages.length === 0 && (
             <div className="welcome-message">
-              <p>Welcome! Chat with Ian the Criblanian, and get ready for some goat jokes! 🐐</p>
+              <p>Welcome to your chat with Ian! Get ready for some goat jokes! 🐐</p>
             </div>
           )}
           {messages.map((msg, idx) => (

@@ -40,9 +40,18 @@
   background: linear-gradient(135deg, #1a1a1d 0%, #2b2b2e 100%);
   color: #99ebeb;
   padding: 20px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
   border-bottom: 2px solid #99ebeb;
+  position: relative;
+}
+
+.header-logo {
+  height: 40px;
+  width: auto;
+  object-fit: contain;
 }
 
 .chat-header h1 {
@@ -50,6 +59,15 @@
   font-size: 28px;
   font-weight: 600;
   color: #99ebeb;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+}
+
+.header-spacer {
+  width: 40px;
+  height: 40px;
 }
 
 .messages-container {
