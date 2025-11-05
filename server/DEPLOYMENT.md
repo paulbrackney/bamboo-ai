@@ -1,4 +1,4 @@
-# Vercel Deployment Guide for Ian the Goat Backend
+# Vercel Deployment Guide for Bamboo AI Backend
 
 ## Prerequisites
 1. Vercel account
@@ -69,7 +69,7 @@ npm start
 curl https://your-project.vercel.app/api/health
 curl -X POST https://your-project.vercel.app/api/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "Hello Ian!"}'
+  -d '{"message": "Hello Bamboo AI!"}'
 ```
 
 ## Frontend Configuration

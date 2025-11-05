@@ -77,14 +77,14 @@ function App() {
     <div className="app">
       <div className="chat-container">
         <div className="chat-header">
-          <img src="/ian-ai-logo.png" alt="Ian AI Logo" className="header-logo" />
-          <h1>Ian AI</h1>
+          <img src="/bamboo-ai-logo.png" alt="Bamboo AI Logo" className="header-logo" />
+          <h1>Bamboo AI</h1>
           <div className="header-spacer"></div>
         </div>
         <div className="messages-container">
           {messages.length === 0 && (
             <div className="welcome-message">
-              <p>Welcome to your chat with Ian! Get ready for some goat jokes! 🐐</p>
+              <p>Welcome to your chat with Bamboo AI! Get ready for some goat jokes! 🐐</p>
             </div>
           )}
           {messages.map((msg, idx) => (

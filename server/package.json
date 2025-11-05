@@ -1,8 +1,8 @@
 {
-  "name": "ian-the-goat-backend",
+  "name": "bamboo-ai-backend",
   "version": "1.0.0",
   "type": "module",
-  "description": "Backend server for Ian AI chat application",
+  "description": "Backend server for Bamboo AI chat application",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

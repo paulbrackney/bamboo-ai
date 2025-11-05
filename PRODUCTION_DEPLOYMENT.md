@@ -1,4 +1,4 @@
-# 🚀 Production Deployment Guide for Ian the Goat
+# 🚀 Production Deployment Guide for Bamboo AI
 
 ## Overview
 This guide will help you deploy both your **backend** (Node.js/Express) and **frontend** (React/Vite) to production using Vercel.
@@ -75,13 +75,13 @@ curl https://your-backend-project.vercel.app/api/health
 # Test chat endpoint
 curl -X POST https://your-backend-project.vercel.app/api/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "Hello Ian!"}'
+  -d '{"message": "Hello Bamboo AI!"}'
 ```
 
 ### 3.2 Test Frontend
 1. Visit your frontend URL
 2. Try sending a message
-3. You should get a response from Ian with a goat joke!
+3. You should get a response from Bamboo AI with a goat joke!
 
 ---
 
@@ -136,7 +136,7 @@ VITE_API_URL=
 
 ## 📁 Project Structure
 ```
-ian-the-goat/
+bamboo-ai/
 ├── server/                 # Backend (deploy to Vercel)
 │   ├── server.js          # Main server file
 │   ├── package.json       # Backend dependencies
@@ -156,7 +156,7 @@ ian-the-goat/
 After following these steps:
 - ✅ Backend deployed and accessible via API
 - ✅ Frontend deployed and connected to backend
-- ✅ Ian the Criblanian ready to tell goat jokes in production!
+- ✅ Bamboo AI ready to tell goat jokes in production!
 
 ## 🔗 Quick Links
 - [Vercel Dashboard](https://vercel.com/dashboard)

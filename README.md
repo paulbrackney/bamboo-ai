@@ -1,4 +1,4 @@
-# Ian AI Chat Application
+# Bamboo AI Chat Application
 
 A modern chat application built with React, TypeScript, Node.js, and OpenAI. Features a beautiful UI and real-time AI-powered conversations.
 
@@ -76,7 +76,7 @@ PORT=3001
 ## Project Structure
 
 ```
-ian-the-goat/
+bamboo-ai/
 ├── server/              # Backend Node.js server
 │   ├── server.js       # Express server with OpenAI integration
 │   └── package.json    # Backend dependencies
