@@ -84,7 +84,8 @@ function App() {
         <div className="messages-container">
           {messages.length === 0 && (
             <div className="welcome-message">
-              <p>Welcome to your chat with Bamboo AI! Get ready for some goat jokes! 🐐</p>
+              <p>Welcome to your chat with Bamboo AI! Have any questions about Bamboo HR? Just ask!
+              </p>
             </div>
           )}
           {messages.map((msg, idx) => (

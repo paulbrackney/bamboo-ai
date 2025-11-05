@@ -25,7 +25,9 @@ dist-ssr
 
 # Environment variables
 .env
+.env.example
 server/.env
+server/.env.example
 
 # Server dependencies
 server/node_modules
